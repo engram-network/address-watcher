@@ -1,0 +1,99 @@
+package exporter
+
+import (
+	"context"
+	"time"
+
+	"github.com/ethpandaops/ethereum-address-metrics-exporter/pkg/exporter/api"
+	"github.com/ethpandaops/ethereum-address-metrics-exporter/pkg/exporter/jobs"
+	"github.com/sirupsen/logrus"
+)
+
+// Metrics exposes Execution layer metrics
+type Metrics interface {
+	// StartAsync starts all the metrics jobs
+	StartAsync(ctx context.Context)
+}
+
+type metrics struct {
+	log                      logrus.FieldLogger
+	accountMetrics           jobs.Account
+	erc20Metrics             jobs.ERC20
+	erc721Metrics            jobs.ERC721
+	erc1155Metrics           jobs.ERC1155
+	uniswapPairMetrics       jobs.UniswapPair
+	chainlinkDataFeedMetrics jobs.ChainlinkDataFeed
+
+	enabledJobs map[string]bool
+}
+
+// NewMetrics creates a new execution Metrics instance
+func NewMetrics(client api.ExecutionClient, log logrus.FieldLogger, checkInterval time.Duration, namespace string, constLabels map[string]string, addresses *Addresses) Metrics {
+	m := &metrics{
+		log:                      log,
+		accountMetrics:           jobs.NewAccount(client, log, checkInterval, namespace, constLabels, addresses.Account),
+		erc20Metrics:             jobs.NewERC20(client, log, checkInterval, namespace, constLabels, addresses.ERC20),
+		erc721Metrics:            jobs.NewERC721(client, log, checkInterval, namespace, constLabels, addresses.ERC721),
+		erc1155Metrics:           jobs.NewERC1155(client, log, checkInterval, namespace, constLabels, addresses.ERC1155),
+		uniswapPairMetrics:       jobs.NewUniswapPair(client, log, checkInterval, namespace, constLabels, addresses.UniswapPair),
+		chainlinkDataFeedMetrics: jobs.NewChainlinkDataFeed(client, log, checkInterval, namespace, constLabels, addresses.ChainlinkDataFeed),
+
+		enabledJobs: make(map[string]bool),
+	}
+
+	m.log.Info("Enabling address metrics")
+
+	if len(addresses.Account) > 0 {
+		m.enabledJobs[m.accountMetrics.Name()] = true
+	}
+
+	if len(addresses.ERC20) > 0 {
+		m.enabledJobs[m.erc20Metrics.Name()] = true
+	}
+
+	if len(addresses.ERC721) > 0 {
+		m.enabledJobs[m.erc721Metrics.Name()] = true
+	}
+
+	if len(addresses.ERC1155) > 0 {
+		m.enabledJobs[m.erc1155Metrics.Name()] = true
+	}
+
+	if len(addresses.UniswapPair) > 0 {
+		m.enabledJobs[m.uniswapPairMetrics.Name()] = true
+	}
+
+	if len(addresses.ChainlinkDataFeed) > 0 {
+		m.enabledJobs[m.chainlinkDataFeedMetrics.Name()] = true
+	}
+
+	return m
+}
+
+func (m *metrics) StartAsync(ctx context.Context) {
+	if m.enabledJobs[m.accountMetrics.Name()] {
+		go m.accountMetrics.Start(ctx)
+	}
+
+	if m.enabledJobs[m.erc20Metrics.Name()] {
+		go m.erc20Metrics.Start(ctx)
+	}
+
+	if m.enabledJobs[m.erc721Metrics.Name()] {
+		go m.erc721Metrics.Start(ctx)
+	}
+
+	if m.enabledJobs[m.erc1155Metrics.Name()] {
+		go m.erc1155Metrics.Start(ctx)
+	}
+
+	if m.enabledJobs[m.uniswapPairMetrics.Name()] {
+		go m.uniswapPairMetrics.Start(ctx)
+	}
+
+	if m.enabledJobs[m.chainlinkDataFeedMetrics.Name()] {
+		go m.chainlinkDataFeedMetrics.Start(ctx)
+	}
+
+	m.log.Info("Started metrics exporter jobs")
+}
